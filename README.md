@@ -2,4 +2,4 @@
 
 Hindley-Milner type inference.
 
-![repl](https://i.imgur.com/5Un8Mnd.png)
+<img alt="repl screenshot" src="https://i.imgur.com/5Un8Mnd.png" width="320" />
