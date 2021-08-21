@@ -50,3 +50,20 @@ export function show(monotype: Monotype): string {
       return String.fromCharCode("a".charCodeAt(0) + monotype.id);
   }
 }
+
+export function equal(leftMonotype: Monotype, rightMonotype: Monotype): boolean {
+  return JSON.stringify(leftMonotype) === JSON.stringify(rightMonotype);
+}
+
+export function containsUnknown(monotype: Monotype, id: number): boolean {
+  switch (monotype.type) {
+    case Monotype.Type.Int:
+    case Monotype.Type.Bool:
+    case Monotype.Type.Str:
+      return false;
+    case Monotype.Type.Fun:
+      return containsUnknown(monotype.argument, id) || containsUnknown(monotype.result, id);
+    case Monotype.Type.Unk:
+      return id === monotype.id;
+  }
+}
