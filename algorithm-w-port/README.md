@@ -1,3 +1,5 @@
-# Hindley Milner Workshop
+**Work in progress**
 
-Follow along with https://www.youtube.com/watch?v=ytPAlhnAKro.
+# Algorithm W Port
+
+Port of https://github.com/mgrabmueller/AlgorithmW to Rust.
