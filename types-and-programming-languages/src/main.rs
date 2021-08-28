@@ -1,3 +1,5 @@
+use tapl::arithmetic;
+
 fn main() {
-  println!("Hello, world!");
+  arithmetic::run();
 }
