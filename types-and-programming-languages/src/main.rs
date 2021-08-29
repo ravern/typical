@@ -1,5 +1,5 @@
-use tapl::arithmetic;
+use tapl::lambda_calculus;
 
 fn main() {
-  arithmetic::run();
+  lambda_calculus::run();
 }
