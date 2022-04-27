@@ -134,9 +134,33 @@ impl fmt::Display for TypeError {
   }
 }
 
+struct Env {
+  schemes: HashMap<String, Scheme>,
+}
+
+impl Env {
+  pub fn empty() -> Env {
+    Env {
+      schemes: HashMap::new(),
+    }
+  }
+
+  pub fn new(schemes: HashMap<String, Scheme>) -> Env {
+    Env { schemes }
+  }
+
+  pub fn with_parent(
+    parent: &Env,
+    child_schemes: HashMap<String, Scheme>,
+  ) -> Env {
+    let mut schemes = parent.schemes.clone();
+    schemes.extend(child_schemes);
+    Env { schemes }
+  }
+}
+
 struct Ctx {
   substitution: Substitution,
-  schemes: HashMap<String, Scheme>,
   supply: usize,
 }
 
@@ -144,7 +168,6 @@ impl Ctx {
   pub fn new() -> Ctx {
     Ctx {
       substitution: Substitution::new(),
-      schemes: HashMap::new(),
       supply: 0,
     }
   }
@@ -157,28 +180,31 @@ impl Ctx {
 }
 
 fn typecheck(exp: Exp, ty: Option<Type>) -> Result<Type, TypeError> {
-  let ctx = &mut Ctx::new();
-  ctx.schemes.insert(
+  let mut ctx = Ctx::new();
+
+  let mut schemes = HashMap::new();
+  schemes.insert(
     "foo".to_string(),
     Scheme {
       forall: HashSet::new(),
       signature: Type::Int,
     },
   );
+  let env = Env::new(schemes);
 
   if let Some(ty) = ty {
-    check(ctx, exp, ty.clone()).map(|_| ty)
+    check(&env, &mut ctx, exp, ty.clone()).map(|_| ty)
   } else {
-    infer(ctx, exp)
+    infer(&env, &mut ctx, exp)
   }
 }
 
-fn infer(ctx: &mut Ctx, exp: Exp) -> Result<Type, TypeError> {
+fn infer(env: &Env, ctx: &mut Ctx, exp: Exp) -> Result<Type, TypeError> {
   match exp {
     Exp::Int(_) => Ok(Type::Int),
     Exp::Bool(_) => Ok(Type::Bool),
     Exp::Ident(varent) => {
-      if let Some(scheme) = ctx.schemes.get(&varent) {
+      if let Some(scheme) = env.schemes.get(&varent) {
         Ok(scheme.clone().instantiate(ctx))
       } else {
         Err(TypeError::UndefinedIdent(varent))
@@ -189,31 +215,49 @@ fn infer(ctx: &mut Ctx, exp: Exp) -> Result<Type, TypeError> {
       then,
       otherwise,
     } => {
-      check(ctx, *condition, Type::Bool)?;
-      let then_ty = infer(ctx, *then)?;
-      check(ctx, *otherwise, then_ty.clone())?;
+      check(env, ctx, *condition, Type::Bool)?;
+      let then_ty = infer(env, ctx, *then)?;
+      check(env, ctx, *otherwise, then_ty.clone())?;
       Ok(then_ty)
     }
     Exp::Lam { parameters, body } => {
-      let mut binders: Vec<(String, Type)> = Vec::new();
+      let mut child_schemes: HashMap<String, Scheme> = HashMap::new();
       for parameter in parameters {
         if let Some((ident, _)) =
-          binders.iter().find(|(ident, _)| ident == &parameter)
+          child_schemes.iter().find(|(ident, _)| *ident == &parameter)
         {
           return Err(TypeError::DuplicateParameter(ident.clone()));
         }
-        binders.push((parameter, ctx.fresh_type()))
+        child_schemes.insert(
+          parameter,
+          Scheme {
+            forall: HashSet::new(),
+            signature: ctx.fresh_type(),
+          },
+        );
       }
 
-      // TODO: Implement extending of env and inference of body type.
-      unimplemented!();
+      // TODO: I've run into the problem of requiring type annotations on lambda parameters. No time left
+      //       for now, but the decision is to require type annotations for now. In the future, I can figure
+      //       out what all the bidirectional stuff about (even though I'm supposed to be solving that right
+      //       now with check and infer).
+
+      let child_env = Env::with_parent(env, child_schemes);
+      let return_type = infer(&child_env, ctx, *body)?;
+
+      unimplemented!()
     }
     _ => unimplemented!(),
   }
 }
 
-fn check(ctx: &mut Ctx, exp: Exp, ty: Type) -> Result<(), TypeError> {
-  let expected_ty = infer(ctx, exp)?;
+fn check(
+  env: &Env,
+  ctx: &mut Ctx,
+  exp: Exp,
+  ty: Type,
+) -> Result<(), TypeError> {
+  let expected_ty = infer(env, ctx, exp)?;
   unify(ctx, ty, expected_ty)
 }
 
@@ -296,7 +340,7 @@ fn main() {
     parameters: vec!["foo".to_string()],
     body: Box::new(Exp::Ident("foo".to_string())),
   };
-  match typecheck(exp, Some(Type::Bool)) {
+  match typecheck(exp, None) {
     Ok(ty) => println!("{}", ty),
     Err(error) => println!("Error: {}", error),
   }
