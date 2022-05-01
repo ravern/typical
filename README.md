@@ -2,4 +2,9 @@
 
 A study of type systems.
 
-<img alt="repl screenshot" src="https://i.imgur.com/5Un8Mnd.png" width="320" />
+| Directory                       | Completed | Language   |
+| ------------------------------- | --------- | ---------- |
+| Hindley Milner Workshop         | ✅         | TypeScript |
+| Rewrite `type-inference`        | ✅         | Rust       |
+| Algorithm W Port                |           | Rust       |
+| Types and Programming Languages |           | Rust       |
