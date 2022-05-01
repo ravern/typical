@@ -52,8 +52,9 @@ impl Display for Type {
   }
 }
 
+#[derive(Debug)]
 enum Expr {
-  Num(i64),
+  Int(i64),
   Bool(bool),
   Ident(String),
   Lam(String, Box<Self>),
@@ -245,7 +246,7 @@ fn unify(subst: &Subst, expected: &Type, actual: &Type) -> Result<Subst, TypeErr
           unify(&subst?, &expected, &actual)
         })
     }
-    (expected, actual) => Err(TypeError::MismatchedTypes(expected, actual)),
+    (expected, actual) => Err(TypeError::MismatchedTypes(actual, expected)),
   }
 }
 
@@ -282,9 +283,9 @@ fn infer(
         subst,
         supply,
         lam,
-        &Type::Fun(Box::new(arg_ty), Box::new(ty.clone())),
+        &Type::Fun(Box::new(arg_ty.clone()), Box::new(ty.clone())),
       )?;
-      infer(env, &subst, supply, arg, ty)
+      infer(env, &subst, supply, arg, &arg_ty)
     }
     Expr::Let(ident, arg, body) => {
       let arg_ty = Type::Var(supply.next());
@@ -294,6 +295,29 @@ fn infer(
         Scheme::generalize(env, &subst.apply(&arg_ty)),
       );
       infer(&env, &subst, supply, body, ty)
+    }
+    Expr::LetRec(ident, arg, body) => {
+      let arg_ty = Type::Var(supply.next());
+      let env = env.extend(ident.clone(), Scheme::generalize(env, &arg_ty));
+      let subst = infer(&env, subst, supply, arg, &arg_ty)?;
+      let env = env.extend(
+        ident.clone(),
+        Scheme::generalize(&env, &subst.apply(&arg_ty)),
+      );
+      infer(&env, &subst, supply, body, ty)
+    }
+    Expr::Bool(_) => unify(subst, &Type::Con("Bool".to_string(), vec![]), ty),
+    Expr::Int(_) => unify(subst, &Type::Con("Int".to_string(), vec![]), ty),
+    Expr::If(predicate, then, otherwise) => {
+      let subst = infer(
+        env,
+        subst,
+        supply,
+        predicate,
+        &Type::Con("Bool".to_string(), vec![]),
+      )?;
+      let subst = infer(env, &subst, supply, then, &ty)?;
+      infer(env, &subst, supply, otherwise, &ty)
     }
     _ => unimplemented!(),
   }
@@ -311,16 +335,16 @@ fn main() {
     "foo".to_string(),
     Scheme(Type::Con("Int".to_string(), vec![]), HashSet::new()),
   );
-  let expr = Expr::Let(
-    "id".to_string(),
+  let expr = Expr::Call(
     Box::new(Expr::Lam(
       "foo".to_string(),
-      Box::new(Expr::Ident("foo".to_string())),
+      Box::new(Expr::If(
+        Box::new(Expr::Ident("foo".to_string())),
+        Box::new(Expr::Int(32)),
+        Box::new(Expr::Int(32)),
+      )),
     )),
-    Box::new(Expr::Lam(
-      "bar".to_string(),
-      Box::new(Expr::Ident("foo".to_string())),
-    )),
+    Box::new(Expr::Int(32)),
   );
   match typecheck(&env, &expr) {
     Ok(ty) => println!("{}", ty),
