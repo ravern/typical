@@ -3,7 +3,7 @@ use std::{
   fmt::{self, Display},
 };
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 enum Type {
   Var(usize),
   Fun(Box<Self>, Box<Self>),
@@ -85,7 +85,7 @@ impl Display for TypeError {
   }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 enum Env {
   Empty,
   Frame(String, Scheme, Box<Env>),
@@ -107,14 +107,26 @@ impl Env {
         if existing_ident == ident {
           Some(scheme.clone())
         } else {
-          parent.get(existing_ident)
+          parent.get(ident)
         }
       }
     }
   }
+
+  fn ty_vars(&self) -> HashSet<usize> {
+    match self {
+      Self::Empty => HashSet::new(),
+      Self::Frame(_, scheme, parent) => scheme
+        .ty_vars()
+        .union(&parent.ty_vars())
+        .into_iter()
+        .cloned()
+        .collect(),
+    }
+  }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 enum Subst {
   Empty,
   Pair(Type, Type, Box<Subst>),
@@ -141,13 +153,56 @@ impl Subst {
       }
     }
   }
+
+  fn apply(&self, ty: &Type) -> Type {
+    match ty {
+      Type::Var(var) => {
+        let to_ty = self.get(&Type::Var(*var));
+        if ty == &to_ty {
+          to_ty
+        } else {
+          self.apply(&to_ty)
+        }
+      }
+      Type::Fun(input, output) => {
+        Type::Fun(Box::new(self.apply(input)), Box::new(self.apply(output)))
+      }
+      Type::Con(ident, ty_vars) => Type::Con(
+        ident.clone(),
+        ty_vars.iter().map(|ty| self.apply(ty)).collect(),
+      ),
+    }
+  }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct Scheme(Type, HashSet<usize>);
 
 impl Scheme {
-  // fn instantiate(&self, supply: &mut Supply) -> Type {}
+  fn generalize(env: &Env, ty: &Type) -> Scheme {
+    Scheme(
+      ty.clone(),
+      ty.ty_vars()
+        .difference(&env.ty_vars())
+        .into_iter()
+        .cloned()
+        .collect(),
+    )
+  }
+
+  fn instantiate(&self, supply: &mut Supply) -> Type {
+    self
+      .1
+      .iter()
+      .fold(Subst::empty(), |subst, var| {
+        subst.extend(Type::Var(*var), Type::Var(supply.next()))
+      })
+      .apply(&self.0)
+  }
+
+  fn ty_vars(&self) -> HashSet<usize> {
+    self.1.clone()
+  }
 }
 
 struct Supply(usize);
@@ -164,12 +219,111 @@ impl Supply {
   }
 }
 
+fn unify(subst: &Subst, expected: &Type, actual: &Type) -> Result<Subst, TypeError> {
+  let expected = subst.apply(expected);
+  let actual = subst.apply(actual);
+  match (expected, actual) {
+    (Type::Var(expected_var), Type::Var(actual_var)) if expected_var == actual_var => {
+      Ok(subst.clone())
+    }
+    (Type::Var(var), actual) if !actual.ty_vars().contains(&var) => {
+      Ok(subst.extend(Type::Var(var), actual.clone()))
+    }
+    (expected, Type::Var(var)) => unify(subst, &Type::Var(var), &expected),
+    (Type::Fun(expected_input, expected_output), Type::Fun(actual_input, actual_output)) => unify(
+      &unify(subst, &expected_output, &actual_output)?,
+      &expected_input,
+      &actual_input,
+    ),
+    (Type::Con(expected_ident, expected_ty_vars), Type::Con(actual_ident, actual_ty_vars))
+      if expected_ident == actual_ident =>
+    {
+      expected_ty_vars
+        .iter()
+        .zip(actual_ty_vars)
+        .fold(Ok(subst.clone()), |subst, (expected, actual)| {
+          unify(&subst?, &expected, &actual)
+        })
+    }
+    (expected, actual) => Err(TypeError::MismatchedTypes(expected, actual)),
+  }
+}
+
+fn infer(
+  env: &Env,
+  subst: &Subst,
+  supply: &mut Supply,
+  expr: &Expr,
+  ty: &Type,
+) -> Result<Subst, TypeError> {
+  match expr {
+    Expr::Ident(ident) => {
+      if let Some(scheme) = env.get(ident) {
+        unify(subst, &scheme.instantiate(supply), ty)
+      } else {
+        Err(TypeError::UndefinedIdent(ident.to_string()))
+      }
+    }
+    Expr::Lam(ident, body) => {
+      let input_ty = Type::Var(supply.next());
+      let output_ty = Type::Var(supply.next());
+      let subst = unify(
+        subst,
+        ty,
+        &Type::Fun(Box::new(input_ty.clone()), Box::new(output_ty.clone())),
+      )?;
+      let env = env.extend(ident.to_string(), Scheme(input_ty, HashSet::new()));
+      infer(&env, &subst, supply, body, &output_ty)
+    }
+    Expr::Call(lam, arg) => {
+      let arg_ty = Type::Var(supply.next());
+      let subst = infer(
+        env,
+        subst,
+        supply,
+        lam,
+        &Type::Fun(Box::new(arg_ty), Box::new(ty.clone())),
+      )?;
+      infer(env, &subst, supply, arg, ty)
+    }
+    Expr::Let(ident, arg, body) => {
+      let arg_ty = Type::Var(supply.next());
+      let subst = infer(env, subst, supply, arg, &arg_ty)?;
+      let env = env.extend(
+        ident.clone(),
+        Scheme::generalize(env, &subst.apply(&arg_ty)),
+      );
+      infer(&env, &subst, supply, body, ty)
+    }
+    _ => unimplemented!(),
+  }
+}
+
+fn typecheck(env: &Env, expr: &Expr) -> Result<Type, TypeError> {
+  let mut supply = Supply::new();
+  let ty = Type::Var(supply.next());
+  let subst = infer(env, &Subst::empty(), &mut supply, expr, &ty)?;
+  Ok(subst.apply(&ty))
+}
+
 fn main() {
-  println!(
-    "{}",
-    Type::Fun(
-      Box::new(Type::Con("List".to_string(), vec![Type::Var(0)])),
-      Box::new(Type::Var(1))
-    )
+  let env = Env::empty().extend(
+    "foo".to_string(),
+    Scheme(Type::Con("Int".to_string(), vec![]), HashSet::new()),
   );
+  let expr = Expr::Let(
+    "id".to_string(),
+    Box::new(Expr::Lam(
+      "foo".to_string(),
+      Box::new(Expr::Ident("foo".to_string())),
+    )),
+    Box::new(Expr::Lam(
+      "bar".to_string(),
+      Box::new(Expr::Ident("foo".to_string())),
+    )),
+  );
+  match typecheck(&env, &expr) {
+    Ok(ty) => println!("{}", ty),
+    Err(error) => println!("Error: {}", error),
+  }
 }
