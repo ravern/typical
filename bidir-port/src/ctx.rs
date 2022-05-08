@@ -28,6 +28,26 @@ impl Ctx {
     }
   }
 
+  pub fn insert_in_place(&self, elem: CtxElem, new_elems: Vec<CtxElem>) -> Option<Self> {
+    if let Some(index) = self.elems.iter().position(|e| e == &elem) {
+      let mut elems = self.elems.clone();
+      elems.splice(index..=index, new_elems).count();
+      Some(Ctx { elems })
+    } else {
+      None
+    }
+  }
+
+  pub fn drop(&self, elem: CtxElem) -> Self {
+    if let Some(index) = self.elems.iter().position(|e| e == &elem) {
+      let mut elems = self.elems.clone();
+      elems.split_off(index);
+      Ctx { elems }
+    } else {
+      self.clone()
+    }
+  }
+
   pub fn get_solved(&self, alpha: &str) -> Option<&Type> {
     self.elems.iter().find_map(|elem| {
       if let CtxElem::Solved(a, ty) = elem {

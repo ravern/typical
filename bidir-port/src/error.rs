@@ -7,6 +7,7 @@ pub enum TypeError {
   UndefinedVar(String),
   InvalidType(Type),
   MismatchedTypes(Type, Type),
+  CyclicalType,
 }
 
 impl fmt::Display for TypeError {
@@ -19,6 +20,7 @@ impl fmt::Display for TypeError {
         "mismatched types: tried to match {} with {}",
         ty, expected_ty
       ),
+      Self::CyclicalType => write!(f, "cyclical type found, unable to typecheck"),
     }
   }
 }

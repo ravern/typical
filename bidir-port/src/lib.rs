@@ -14,6 +14,17 @@ struct State {
   exist_count: usize,
 }
 
+impl State {
+  fn fresh_exist(&mut self) -> String {
+    let exist = format!(
+      "{}",
+      char::from_u32(self.exist_count as u32 + 'a' as u32).unwrap()
+    );
+    self.exist_count += 1;
+    exist
+  }
+}
+
 pub fn synth(expr: &Expr) -> Result<Type> {
   let (ty, ctx) = synthesises_to(&mut State::default(), &Ctx::default(), expr)?;
   let ty = apply_ctx(ty, &ctx);
@@ -62,6 +73,19 @@ fn synthesises_to(state: &mut State, ctx: &Ctx, expr: &Expr) -> Result<(Type, Ct
         Err(TypeError::InvalidType(ty.clone()))
       }
     }
+    Expr::Abs(arg, body) => {
+      let alpha = state.fresh_exist();
+      let beta = state.fresh_exist();
+      let alpha_ty = Type::Exist(alpha.clone());
+      let beta_ty = Type::Exist(beta.clone());
+      let ctx = ctx
+        .add(CtxElem::Exist(alpha.clone()))
+        .add(CtxElem::Exist(beta.clone()))
+        .add(CtxElem::TypedVar(arg.clone(), alpha_ty.clone()));
+      let ctx = checks_against(state, &ctx, body, &beta_ty)?
+        .drop(CtxElem::TypedVar(arg.clone(), alpha_ty.clone()));
+      Ok((Type::Fun(Box::new(alpha_ty), Box::new(beta_ty)), ctx))
+    }
     _ => unimplemented!(),
   }
 }
@@ -95,6 +119,17 @@ fn is_well_formed(ctx: &Ctx, ty: &Type) -> bool {
   }
 }
 
+fn occurs_in(var: &str, ty: &Type) -> bool {
+  match ty {
+    Type::Lit(..) => false,
+    Type::Var(var) => var == var,
+    Type::Fun(arg, body) => occurs_in(var, arg) || occurs_in(var, body),
+    Type::Quant(alpha, ty) if var == alpha => true,
+    Type::Quant(alpha, ty) => occurs_in(var, ty),
+    Type::Exist(exist) => exist == var,
+  }
+}
+
 fn subtype(state: &mut State, ctx: &Ctx, sub_ty: &Type, ty: &Type) -> Result<Ctx> {
   if !is_well_formed(ctx, sub_ty) {
     return Err(TypeError::InvalidType(sub_ty.clone()));
@@ -109,6 +144,61 @@ fn subtype(state: &mut State, ctx: &Ctx, sub_ty: &Type, ty: &Type) -> Result<Ctx
     (Type::Lit(ty::Lit::Float), Type::Lit(ty::Lit::Float)) => Ok(ctx.clone()),
     (Type::Lit(ty::Lit::Bool), Type::Lit(ty::Lit::Bool)) => Ok(ctx.clone()),
     (Type::Lit(ty::Lit::String), Type::Lit(ty::Lit::String)) => Ok(ctx.clone()),
+    (Type::Var(sub_var), Type::Var(var)) if sub_var == var => {
+      if is_well_formed(ctx, sub_ty) {
+        Ok(ctx.clone())
+      } else {
+        Err(TypeError::MismatchedTypes(
+          apply_ctx(sub_ty.clone(), ctx),
+          apply_ctx(ty.clone(), ctx),
+        ))
+      }
+    }
+    (Type::Exist(sub_exist), Type::Exist(exist)) if sub_exist == exist => {
+      if is_well_formed(ctx, sub_ty) {
+        Ok(ctx.clone())
+      } else {
+        Err(TypeError::MismatchedTypes(
+          apply_ctx(sub_ty.clone(), ctx),
+          apply_ctx(ty.clone(), ctx),
+        ))
+      }
+    }
+    (Type::Fun(sub_arg, sub_body), Type::Fun(arg, body)) => {
+      let ctx = subtype(state, ctx, sub_arg, arg)?;
+      subtype(
+        state,
+        &ctx,
+        &apply_ctx(*sub_body.clone(), &ctx),
+        &apply_ctx(*body.clone(), &ctx),
+      )
+    }
+    (sub_ty, Type::Exist(exist)) => {
+      if !occurs_in(exist, sub_ty) {
+        instantiate_r(state, ctx, sub_ty, exist)
+      } else {
+        Err(TypeError::CyclicalType)
+      }
+    }
     (sub_ty, ty) => Err(TypeError::MismatchedTypes(sub_ty.clone(), ty.clone())),
   }
+}
+
+fn instantiate_r(state: &mut State, ctx: &Ctx, ty: &Type, exist: &str) -> Result<Ctx> {
+  let (left_ctx, right_ctx) = ctx
+    .split_at(CtxElem::Exist(exist.to_string()))
+    .expect("existential not found in context");
+
+  if ty.is_monotype() && is_well_formed(&left_ctx, ty) {
+    return Ok(
+      ctx
+        .insert_in_place(
+          CtxElem::Exist(exist.to_string()),
+          vec![CtxElem::Solved(exist.to_string(), ty.clone())],
+        )
+        .expect("existential not found in context"),
+    );
+  }
+
+  unimplemented!()
 }

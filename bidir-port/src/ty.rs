@@ -23,6 +23,8 @@ impl fmt::Display for Type {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match self {
       Self::Lit(lit) => write!(f, "{}", lit),
+      Self::Exist(exist) => write!(f, "{}", exist),
+      Self::Fun(arg, body) => write!(f, "{} -> {}", arg, body),
       _ => unimplemented!(),
     }
   }

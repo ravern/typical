@@ -5,9 +5,9 @@ use bidir_port::{
 };
 
 fn main() {
-  let expr = Expr::Anno(Box::new(Expr::Lit(Lit::Int(32))), Type::Lit(ty::Lit::Bool));
+  let expr = Expr::Abs("foo".to_string(), Box::new(Expr::Lit(Lit::Int(32))));
   match synth(&expr) {
     Ok(ty) => println!("{}", ty),
-    Err(error) => println!("Error: {}", error),
+    Err(error) => println!("Error: {:?}", error),
   }
 }
