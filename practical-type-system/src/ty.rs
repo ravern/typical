@@ -2,15 +2,14 @@ use internment::Intern;
 
 use crate::ast::{self, StructDeclaration};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Type {
   Struct(StructType),
   Function(FunctionType),
-  Unknown(usize),
   Primitive(Primitive),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct StructType {
   pub identifier: Intern<String>,
   pub fields: Vec<StructField>,
@@ -29,7 +28,7 @@ impl From<StructDeclaration> for StructType {
   }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct StructField {
   pub identifier: Intern<String>,
   pub ty: Box<Type>,
@@ -44,7 +43,7 @@ impl From<ast::StructField> for StructField {
   }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct FunctionType {
   pub identifier: Intern<String>,
   pub parameters: Vec<FunctionParameter>,
@@ -65,7 +64,7 @@ impl From<ast::FunctionDeclaration> for FunctionType {
   }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct FunctionParameter {
   pub identifier: Intern<String>,
   pub ty: Type,
@@ -80,7 +79,7 @@ impl From<ast::FunctionParameter> for FunctionParameter {
   }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Primitive {
   Int,
   Float,
