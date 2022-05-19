@@ -61,6 +61,7 @@ pub enum Pattern {
 pub enum Expression {
   Block(BlockExpression),
   If(IfExpression),
+  Call(CallExpression),
   BinaryOperation(BinaryOperation),
   UnaryOperation(UnaryOperation),
   Literal(Literal),
@@ -78,6 +79,12 @@ pub struct IfExpression {
   pub condition: Box<Expression>,
   pub then_clause: Box<Expression>,
   pub else_clause: Box<Expression>,
+}
+
+#[derive(Clone, Debug)]
+pub struct CallExpression {
+  pub callee: Box<Expression>,
+  pub arguments: Vec<Expression>,
 }
 
 #[derive(Clone, Debug)]
