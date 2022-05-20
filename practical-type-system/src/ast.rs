@@ -64,6 +64,7 @@ pub enum Expression {
   Call(CallExpression),
   BinaryOperation(BinaryOperation),
   UnaryOperation(UnaryOperation),
+  Closure(ClosureExpression),
   Literal(Literal),
   Identifier(Intern<String>),
 }
@@ -117,6 +118,19 @@ pub struct UnaryOperation {
 pub enum UnaryOperator {
   Negate,
   Not,
+}
+
+#[derive(Clone, Debug)]
+pub struct ClosureExpression {
+  pub parameters: Vec<ClosureParameter>,
+  pub body: Box<Expression>,
+  pub return_ty: Option<Type>,
+}
+
+#[derive(Clone, Debug)]
+pub struct ClosureParameter {
+  pub identifier: Intern<String>,
+  pub ty: Option<Type>,
 }
 
 #[derive(Clone, Debug)]

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use internment::Intern;
 
-use ast::{Expression, Literal};
+use ast::{ClosureParameter, Expression, Literal};
 use error::TypeError;
 use ty::{Primitive, Type};
 
@@ -35,8 +35,38 @@ pub fn check(
   expression: &Expression,
   expected_ty: &Type,
 ) -> Result<(), TypeError> {
-  let ty = synthesize(environment, expression)?;
-  subtype(environment, &ty, expected_ty)
+  match (expression, expected_ty) {
+    (Expression::Closure(closure_expression), Type::Function(function_ty))
+      if closure_expression.parameters.len() == function_ty.parameters.len() =>
+    {
+      let mut variables = HashMap::new();
+      closure_expression
+        .parameters
+        .iter()
+        .zip(function_ty.parameters.iter())
+        .map(|(closure_parameter, ty)| {
+          if let Some(annotated_ty) = &closure_parameter.ty {
+            subtype(environment, ty, annotated_ty)?;
+          }
+          variables.insert(closure_parameter.identifier.clone(), ty.clone());
+          Ok(())
+        })
+        .collect::<Result<_, TypeError>>()?;
+      if let Some(return_ty) = &closure_expression.return_ty {
+        subtype(&environment, return_ty, &function_ty.return_ty)?;
+      }
+      let environment = Environment::with_parent(environment, variables);
+      check(
+        &environment,
+        &closure_expression.body,
+        &function_ty.return_ty,
+      )
+    }
+    (expression, expected_ty) => {
+      let ty = synthesize(environment, expression)?;
+      subtype(environment, &ty, expected_ty)
+    }
+  }
 }
 
 pub fn synthesize(environment: &Environment, expression: &Expression) -> Result<Type, TypeError> {
@@ -81,6 +111,21 @@ pub fn subtype(environment: &Environment, sub_ty: &Type, ty: &Type) -> Result<()
     (Type::Primitive(Primitive::Float), Type::Primitive(Primitive::Float)) => Ok(()),
     (Type::Primitive(Primitive::String), Type::Primitive(Primitive::String)) => Ok(()),
     (Type::Primitive(Primitive::Bool), Type::Primitive(Primitive::Bool)) => Ok(()),
+    (Type::Function(sub_function_ty), Type::Function(function_ty))
+      if sub_function_ty.parameters.len() == function_ty.parameters.len() =>
+    {
+      sub_function_ty
+        .parameters
+        .iter()
+        .zip(function_ty.parameters.iter())
+        .map(|(sub_parameter, parameter)| subtype(environment, parameter, sub_parameter))
+        .collect::<Result<_, TypeError>>()?;
+      subtype(
+        environment,
+        &sub_function_ty.return_ty,
+        &function_ty.return_ty,
+      )
+    }
     _ => Err(TypeError::MismatchedTypes(sub_ty.clone(), ty.clone())),
   }
 }
@@ -91,8 +136,8 @@ mod tests {
 
   use internment::Intern;
 
-  use crate::ast::{CallExpression, Expression, Literal};
-  use crate::ty::{self, FunctionType, Primitive, Type};
+  use crate::ast::{CallExpression, ClosureExpression, ClosureParameter, Expression, Literal};
+  use crate::ty::{FunctionType, Primitive, Type};
   use crate::{check, Environment};
 
   #[test]
@@ -155,6 +200,26 @@ mod tests {
         ],
       }),
       &Type::Primitive(Primitive::Bool),
+    )
+    .unwrap();
+  }
+
+  #[test]
+  fn check_closure_expression() {
+    check(
+      &Environment::default(),
+      &Expression::Closure(ClosureExpression {
+        parameters: vec![ClosureParameter {
+          identifier: Intern::new("foo".to_string()),
+          ty: None,
+        }],
+        body: Box::new(Expression::Identifier(Intern::new("foo".to_string()))),
+        return_ty: Some(Type::Primitive(Primitive::Int)),
+      }),
+      &Type::Function(FunctionType {
+        parameters: vec![Type::Primitive(Primitive::Int)],
+        return_ty: Box::new(Type::Primitive(Primitive::Int)),
+      }),
     )
     .unwrap();
   }
