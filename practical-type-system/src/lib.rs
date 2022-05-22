@@ -1,15 +1,10 @@
-use std::{
-  collections::{hash_map::RandomState, HashMap, HashSet},
-  mem::uninitialized,
-};
+use std::collections::HashMap;
 
 use internment::Intern;
 
-use ast::{
-  BinaryOperator, ClosureParameter, Expression, Literal, StructDeclaration, UnaryOperator,
-};
+use ast::{BinaryOperator, Expression, Literal, StructDeclaration, UnaryOperator};
 use error::TypeError;
-use ty::{Primitive, StructType, Type};
+use ty::{Primitive, Type};
 
 mod ast;
 mod error;
