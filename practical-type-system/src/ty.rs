@@ -11,12 +11,14 @@ pub enum Type {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct StructType {
+  pub identifier: Intern<String>,
   pub fields: Vec<StructField>,
 }
 
 impl From<StructDeclaration> for StructType {
   fn from(declaration: StructDeclaration) -> Self {
     Self {
+      identifier: declaration.identifier,
       fields: declaration
         .fields
         .into_iter()

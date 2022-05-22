@@ -64,6 +64,7 @@ pub enum Expression {
   Call(CallExpression),
   BinaryOperation(BinaryOperation),
   UnaryOperation(UnaryOperation),
+  Struct(StructExpression),
   Closure(ClosureExpression),
   Literal(Literal),
   Identifier(Intern<String>),
@@ -118,6 +119,18 @@ pub struct UnaryOperation {
 pub enum UnaryOperator {
   Negate,
   Not,
+}
+
+#[derive(Clone, Debug)]
+pub struct StructExpression {
+  pub identifier: Intern<String>,
+  pub fields: Vec<StructExpressionField>,
+}
+
+#[derive(Clone, Debug)]
+pub struct StructExpressionField {
+  pub identifier: Intern<String>,
+  pub expression: Expression,
 }
 
 #[derive(Clone, Debug)]

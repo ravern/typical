@@ -1,10 +1,15 @@
-use std::{collections::HashMap, mem::uninitialized};
+use std::{
+  collections::{hash_map::RandomState, HashMap, HashSet},
+  mem::uninitialized,
+};
 
 use internment::Intern;
 
-use ast::{BinaryOperator, ClosureParameter, Expression, Literal, UnaryOperator};
+use ast::{
+  BinaryOperator, ClosureParameter, Expression, Literal, StructDeclaration, UnaryOperator,
+};
 use error::TypeError;
-use ty::{Primitive, Type};
+use ty::{Primitive, StructType, Type};
 
 mod ast;
 mod error;
@@ -12,17 +17,24 @@ mod ty;
 
 #[derive(Debug, Default)]
 pub struct Environment {
+  structs: HashMap<Intern<String>, StructDeclaration>,
   variables: HashMap<Intern<String>, Type>,
 }
 
 impl Environment {
-  pub fn new(variables: HashMap<Intern<String>, Type>) -> Self {
-    Self { variables }
+  pub fn new(
+    structs: HashMap<Intern<String>, StructDeclaration>,
+    variables: HashMap<Intern<String>, Type>,
+  ) -> Self {
+    Self { structs, variables }
   }
 
   pub fn with_parent(parent: &Self, mut variables: HashMap<Intern<String>, Type>) -> Self {
     variables.extend(parent.variables.clone());
-    Self { variables }
+    Self {
+      structs: parent.structs.clone(),
+      variables,
+    }
   }
 
   pub fn get(&self, identifier: &Intern<String>) -> Option<&Type> {
@@ -173,6 +185,38 @@ pub fn synthesize(environment: &Environment, expression: &Expression) -> Result<
         Ok(Type::Primitive(Primitive::Bool))
       }
     },
+    Expression::Struct(struct_expression) => {
+      let declaration = environment
+        .structs
+        .get(&struct_expression.identifier)
+        .ok_or(TypeError::UndefinedIdentifier(
+          struct_expression.identifier.clone(),
+        ))?;
+
+      let mut fields = HashMap::new();
+      for field in &declaration.fields {
+        fields.insert(field.identifier.clone(), field.ty.clone());
+      }
+
+      for field in &struct_expression.fields {
+        if !fields.contains_key(&field.identifier) {
+          return Err(TypeError::InvalidField(
+            declaration.identifier.clone(),
+            field.identifier.clone(),
+          ));
+        }
+        fields.remove(&field.identifier);
+      }
+
+      if !fields.is_empty() {
+        return Err(TypeError::MissingField(
+          declaration.identifier.clone(),
+          fields.keys().next().unwrap().clone(),
+        ));
+      }
+
+      Ok(Type::Struct(declaration.clone().into()))
+    }
     _ => unimplemented!(),
   }
 }
@@ -198,6 +242,29 @@ pub fn subtype(environment: &Environment, sub_ty: &Type, ty: &Type) -> Result<()
         &function_ty.return_ty,
       )
     }
+    (Type::Struct(sub_struct_ty), Type::Struct(struct_ty))
+      if sub_struct_ty.identifier == struct_ty.identifier =>
+    {
+      let mut sub_fields = HashMap::new();
+      for field in &sub_struct_ty.fields {
+        sub_fields.insert(field.identifier.clone(), field.ty.clone());
+      }
+
+      for field in &struct_ty.fields {
+        if let Some(sub_field_ty) = sub_fields.get(&field.identifier) {
+          subtype(environment, &sub_field_ty, &field.ty)?;
+          sub_fields.remove(&field.identifier);
+        } else {
+          return Err(TypeError::MismatchedTypes(sub_ty.clone(), ty.clone()));
+        }
+      }
+
+      if sub_fields.is_empty() {
+        Ok(())
+      } else {
+        Err(TypeError::MismatchedTypes(sub_ty.clone(), ty.clone()))
+      }
+    }
     _ => Err(TypeError::MismatchedTypes(sub_ty.clone(), ty.clone())),
   }
 }
@@ -210,9 +277,10 @@ mod tests {
 
   use crate::ast::{
     BinaryOperation, BinaryOperator, CallExpression, ClosureExpression, ClosureParameter,
-    Expression, Literal, UnaryOperation, UnaryOperator,
+    Expression, Literal, StructDeclaration, StructExpression, StructExpressionField, StructField,
+    UnaryOperation, UnaryOperator,
   };
-  use crate::ty::{FunctionType, Primitive, Type};
+  use crate::ty::{self, FunctionType, Primitive, StructType, Type};
   use crate::{check, Environment};
 
   #[test]
@@ -244,7 +312,7 @@ mod tests {
     );
 
     check(
-      &Environment::new(variables),
+      &Environment::new(HashMap::new(), variables),
       &Expression::Identifier(Intern::new("foo".to_string())),
       &Type::Primitive(Primitive::String),
     )
@@ -266,7 +334,7 @@ mod tests {
     );
 
     check(
-      &Environment::new(variables),
+      &Environment::new(HashMap::new(), variables),
       &Expression::Call(CallExpression {
         callee: Box::new(Expression::Identifier(Intern::new("foo".to_string()))),
         arguments: vec![
@@ -341,6 +409,62 @@ mod tests {
       &Type::Function(FunctionType {
         parameters: vec![Type::Primitive(Primitive::Int)],
         return_ty: Box::new(Type::Primitive(Primitive::Int)),
+      }),
+    )
+    .unwrap();
+  }
+
+  #[test]
+  fn check_struct_expression() {
+    let foo = Intern::new("Foo".to_string());
+    let bar = Intern::new("bar".to_string());
+    let baz = Intern::new("baz".to_string());
+
+    let mut structs = HashMap::new();
+    structs.insert(
+      foo,
+      StructDeclaration {
+        identifier: foo.clone(),
+        fields: vec![
+          StructField {
+            identifier: bar.clone(),
+            ty: Type::Primitive(Primitive::Int),
+          },
+          StructField {
+            identifier: baz.clone(),
+            ty: Type::Primitive(Primitive::Bool),
+          },
+        ],
+      },
+    );
+
+    check(
+      &Environment::new(structs, HashMap::new()),
+      &Expression::Struct(StructExpression {
+        identifier: foo.clone(),
+        fields: vec![
+          StructExpressionField {
+            identifier: bar.clone(),
+            expression: Expression::Literal(Literal::Int(32)),
+          },
+          StructExpressionField {
+            identifier: baz.clone(),
+            expression: Expression::Literal(Literal::Bool(false)),
+          },
+        ],
+      }),
+      &Type::Struct(StructType {
+        identifier: foo.clone(),
+        fields: vec![
+          ty::StructField {
+            identifier: bar.clone(),
+            ty: Box::new(Type::Primitive(Primitive::Int)),
+          },
+          ty::StructField {
+            identifier: baz.clone(),
+            ty: Box::new(Type::Primitive(Primitive::Bool)),
+          },
+        ],
       }),
     )
     .unwrap();
