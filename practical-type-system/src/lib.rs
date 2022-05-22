@@ -1,8 +1,8 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, mem::uninitialized};
 
 use internment::Intern;
 
-use ast::{ClosureParameter, Expression, Literal};
+use ast::{BinaryOperator, ClosureParameter, Expression, Literal, UnaryOperator};
 use error::TypeError;
 use ty::{Primitive, Type};
 
@@ -101,6 +101,78 @@ pub fn synthesize(environment: &Environment, expression: &Expression) -> Result<
         ))
       }
     }
+    Expression::BinaryOperation(binary_operation) => match &binary_operation.operator {
+      BinaryOperator::Add
+      | BinaryOperator::Subtract
+      | BinaryOperator::Multiply
+      | BinaryOperator::Divide => {
+        let left_ty = synthesize(environment, &binary_operation.left_operand)?;
+        if let Type::Primitive(Primitive::Int) | Type::Primitive(Primitive::Float) = &left_ty {
+          check(environment, &binary_operation.right_operand, &left_ty)?;
+          Ok(left_ty)
+        } else {
+          Err(TypeError::MismatchedTypes(
+            Type::Primitive(Primitive::Int),
+            left_ty,
+          ))
+        }
+      }
+      BinaryOperator::Modulo => {
+        check(
+          environment,
+          &binary_operation.left_operand,
+          &Type::Primitive(Primitive::Int),
+        )?;
+        check(
+          environment,
+          &binary_operation.right_operand,
+          &Type::Primitive(Primitive::Int),
+        )?;
+        Ok(Type::Primitive(Primitive::Int))
+      }
+      BinaryOperator::And | BinaryOperator::Or => {
+        check(
+          environment,
+          &binary_operation.left_operand,
+          &Type::Primitive(Primitive::Bool),
+        )?;
+        check(
+          environment,
+          &binary_operation.right_operand,
+          &Type::Primitive(Primitive::Bool),
+        )?;
+        Ok(Type::Primitive(Primitive::Bool))
+      }
+      BinaryOperator::Equals | BinaryOperator::NotEquals => {
+        let left_ty = synthesize(environment, &binary_operation.left_operand)?;
+        let right_ty = synthesize(environment, &binary_operation.right_operand)?;
+        if subtype(environment, &left_ty, &right_ty).is_err() {
+          subtype(environment, &left_ty, &right_ty)?;
+        }
+        Ok(Type::Primitive(Primitive::Bool))
+      }
+    },
+    Expression::UnaryOperation(unary_operation) => match &unary_operation.operator {
+      UnaryOperator::Negate => {
+        let ty = synthesize(environment, &unary_operation.operand)?;
+        if let Type::Primitive(Primitive::Int) | Type::Primitive(Primitive::Float) = &ty {
+          Ok(ty)
+        } else {
+          Err(TypeError::MismatchedTypes(
+            ty,
+            Type::Primitive(Primitive::Int),
+          ))
+        }
+      }
+      UnaryOperator::Not => {
+        check(
+          environment,
+          &unary_operation.operand,
+          &Type::Primitive(Primitive::Bool),
+        )?;
+        Ok(Type::Primitive(Primitive::Bool))
+      }
+    },
     _ => unimplemented!(),
   }
 }
@@ -136,7 +208,10 @@ mod tests {
 
   use internment::Intern;
 
-  use crate::ast::{CallExpression, ClosureExpression, ClosureParameter, Expression, Literal};
+  use crate::ast::{
+    BinaryOperation, BinaryOperator, CallExpression, ClosureExpression, ClosureParameter,
+    Expression, Literal, UnaryOperation, UnaryOperator,
+  };
   use crate::ty::{FunctionType, Primitive, Type};
   use crate::{check, Environment};
 
@@ -198,6 +273,53 @@ mod tests {
           Expression::Literal(Literal::Int(3)),
           Expression::Literal(Literal::Int(2)),
         ],
+      }),
+      &Type::Primitive(Primitive::Bool),
+    )
+    .unwrap();
+  }
+
+  #[test]
+  fn check_binary_expression() {
+    check(
+      &Environment::default(),
+      &Expression::BinaryOperation(BinaryOperation {
+        operator: BinaryOperator::Add,
+        left_operand: Box::new(Expression::Literal(Literal::Float(3.2))),
+        right_operand: Box::new(Expression::Literal(Literal::Float(4.1))),
+      }),
+      &Type::Primitive(Primitive::Float),
+    )
+    .unwrap();
+    check(
+      &Environment::default(),
+      &Expression::BinaryOperation(BinaryOperation {
+        operator: BinaryOperator::Equals,
+        left_operand: Box::new(Expression::Literal(Literal::Int(32))),
+        right_operand: Box::new(Expression::Literal(Literal::Int(433))),
+      }),
+      &Type::Primitive(Primitive::Bool),
+    )
+    .unwrap();
+  }
+
+  #[test]
+  fn check_unary_expression() {
+    check(
+      &Environment::default(),
+      &Expression::UnaryOperation(UnaryOperation {
+        operator: UnaryOperator::Negate,
+        operand: Box::new(Expression::Literal(Literal::Float(3.2))),
+      }),
+      &Type::Primitive(Primitive::Float),
+    )
+    .unwrap();
+    check(
+      &Environment::default(),
+      &Expression::BinaryOperation(BinaryOperation {
+        operator: BinaryOperator::Equals,
+        left_operand: Box::new(Expression::Literal(Literal::Int(32))),
+        right_operand: Box::new(Expression::Literal(Literal::Int(433))),
       }),
       &Type::Primitive(Primitive::Bool),
     )
