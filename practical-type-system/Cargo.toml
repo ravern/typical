@@ -1,7 +1,0 @@
-[package]
-name = "practical-type-system"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-internment = "0.7.0"
