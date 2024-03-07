@@ -188,9 +188,9 @@ fn unify(ty1: TyRef, ty2: TyRef) -> Result<(), Error> {
       Ok(())
     }
     (Ty::Var(ty_var1), Ty::Var(ty_var2)) => {
-      let mut ty_var_ref_mut1 = ty_var1.borrow_mut();
-      let mut ty_var_ref_mut2 = ty_var2.borrow_mut();
-      match (&*ty_var_ref_mut1, &*ty_var_ref_mut2) {
+      let ty_var_ref1 = ty_var1.borrow();
+      let ty_var_ref2 = ty_var2.borrow();
+      match (&*ty_var_ref1, &*ty_var_ref2) {
         (TyVar::Link(ty1), _ty_var2) => unify(Rc::clone(ty1), Rc::clone(&ty2)),
         (_ty_var_1, TyVar::Link(ty2)) => unify(Rc::clone(&ty1), Rc::clone(ty2)),
         (TyVar::Unbound(id1, _level1), TyVar::Unbound(id2, _level2)) if id1 == id2 => {
@@ -198,36 +198,40 @@ fn unify(ty1: TyRef, ty2: TyRef) -> Result<(), Error> {
         }
         (TyVar::Unbound(id1, level1), _ty_var2) => {
           occurs_check_adjust_levels(*id1, *level1, Rc::clone(&ty2))?;
-          *ty_var_ref_mut2 = TyVar::Link(Rc::clone(&ty1));
+          drop(ty_var_ref2);
+          *ty_var2.borrow_mut() = TyVar::Link(Rc::clone(&ty1));
           Ok(())
         }
         (_ty_var1, TyVar::Unbound(id2, level2)) => {
           occurs_check_adjust_levels(*id2, *level2, Rc::clone(&ty1))?;
-          *ty_var_ref_mut1 = TyVar::Link(Rc::clone(&ty1));
+          drop(ty_var_ref1);
+          *ty_var1.borrow_mut() = TyVar::Link(Rc::clone(&ty1));
           Ok(())
         }
         _ => Err(Error::CannotUnify(Rc::clone(&ty1), Rc::clone(&ty2))),
       }
     }
     (Ty::Var(ty_var1), _ty2) => {
-      let mut ty_var_ref_mut1 = ty_var1.borrow_mut();
-      match &*ty_var_ref_mut1 {
+      let ty_var_ref1 = ty_var1.borrow();
+      match &*ty_var_ref1 {
         TyVar::Link(ty1) => unify(Rc::clone(ty1), Rc::clone(&ty2)),
         TyVar::Unbound(id1, level1) => {
           occurs_check_adjust_levels(*id1, *level1, Rc::clone(&ty2))?;
-          *ty_var_ref_mut1 = TyVar::Link(Rc::clone(&ty2));
+          drop(ty_var_ref1);
+          *ty_var1.borrow_mut() = TyVar::Link(Rc::clone(&ty2));
           Ok(())
         }
         _ => Err(Error::CannotUnify(Rc::clone(&ty1), Rc::clone(&ty2))),
       }
     }
     (_ty1, Ty::Var(ty_var2)) => {
-      let mut ty_var_ref_mut2 = ty_var2.borrow_mut();
-      match &*ty_var_ref_mut2 {
+      let ty_var_ref2 = ty_var2.borrow();
+      match &*ty_var_ref2 {
         TyVar::Link(ty2) => unify(Rc::clone(&ty1), Rc::clone(ty2)),
         TyVar::Unbound(id2, level2) => {
           occurs_check_adjust_levels(*id2, *level2, Rc::clone(&ty1))?;
-          *ty_var_ref_mut2 = TyVar::Link(Rc::clone(&ty1));
+          drop(ty_var_ref2);
+          *ty_var2.borrow_mut() = TyVar::Link(Rc::clone(&ty1));
           Ok(())
         }
         _ => Err(Error::CannotUnify(Rc::clone(&ty1), Rc::clone(&ty2))),
