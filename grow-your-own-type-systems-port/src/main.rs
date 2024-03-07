@@ -1,5 +1,5 @@
-mod algorithm_w;
+use grow_your_own_type_systems::algorithm_w;
 
 fn main() {
-  println!("Hello, world!");
+  algorithm_w::run();
 }

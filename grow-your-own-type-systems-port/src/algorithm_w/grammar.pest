@@ -1,0 +1,19 @@
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+COMMENT    =  { "//" ~ ( !NEWLINE ~ ANY )* ~ NEWLINE }
+
+root = { SOI ~ ( ty_ann | expr ) ~ EOI }
+
+ty_ann   = { name ~ ":" ~ ty }
+ty       = { forall? ~ ty_term+ ~ ( arrow ~ ty_term+ )* }
+ty_term  = { ty_group | name }
+ty_group = { "(" ~ ty ~ ")" }
+forall   = { "forall" ~ "[" ~ name+ ~ "]"}
+arrow    = { "->" }
+
+expr  = { term+ }
+term  = { fun | let_ | group | name }
+fun   = { "\\" ~ name ~ "->" ~ expr }
+let_  = { "let" ~ name ~ "=" ~ term ~ "in" ~ expr }
+group = { "(" ~ expr ~ ")" }
+
+name = @{ ASCII_ALPHA ~ ASCII_ALPHANUMERIC* }
